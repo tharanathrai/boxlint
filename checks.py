@@ -247,12 +247,16 @@ def polygon_problem(shape):
     -   ``"too_few_points"``: fewer than 3 distinct points
     -   ``"non_finite"``: a coordinate is NaN/inf or not a number
     -   ``"zero_area"``: all points collinear (convex hull has no area)
-    -   ``"self_intersecting"``: edges cross or touch (shapely ``is_valid``
+    -   ``"self_intersecting"``: edges cross or overlap (shapely ``is_valid``
         is False)
 
-    A symmetric bow-tie has zero *signed* area, so zero area is judged by the
-    convex hull, not the polygon, so that it is reported as self-intersecting.
+    A ring that only touches itself at a single point (a pinch point, GEOS
+    "Ring Self-intersection") still outlines a sensible region, so it is not
+    flagged. A symmetric bow-tie has zero *signed* area, so zero area is judged
+    by the convex hull, not the polygon, so that it is reported as
+    self-intersecting.
     """
+    import shapely
     from shapely.geometry import MultiPoint, Polygon
 
     points = []
@@ -272,28 +276,52 @@ def polygon_problem(shape):
     if MultiPoint(points).convex_hull.area < _ZERO_AREA:
         return "zero_area"
 
-    if not Polygon(points).is_valid:
+    polygon = Polygon(points)
+    if not polygon.is_valid:
+        if shapely.is_valid_reason(polygon).startswith("Ring Self-intersection"):
+            return None
         return "self_intersecting"
 
     return None
 
 
+# Reasons a shape can have and still be ignored inside a multi-shape label that
+# has at least one valid shape: stray slivers from crowd/RLE conversions.
+_IGNORABLE_IN_MULTI = frozenset(("too_few_points", "zero_area"))
+
+
+def polygon_label_problem(shapes):
+    """Returns why a polygon label (a list of shapes) is bad, or None.
+
+    The reason is ``"no_shapes"`` for a label without shapes, else the first
+    shape problem that counts. Degenerate shapes (too few points, zero area)
+    are ignored when the label has at least one valid shape; crossings and
+    non-finite coordinates always count.
+    """
+    if not shapes:
+        return "no_shapes"
+
+    problems = [polygon_problem(s) for s in shapes]
+    if None in problems:
+        problems = [r for r in problems if r not in _IGNORABLE_IN_MULTI]
+
+    return next((r for r in problems if r), None)
+
+
 def find_bad_polygons(polylines):
-    """Flags polygon labels with any bad shape (see ``polygon_problem``).
+    """Flags bad polygon labels (see ``polygon_label_problem``).
 
     ``polylines`` is an iterable of ``(label_id, points, closed, filled)``,
     where ``points`` is FiftyOne's list of shapes. Only polygons are judged:
     a polyline with ``closed`` and ``filled`` both False is an open line (for
-    example a lane marking) and is skipped. A polygon label with no shapes is
-    flagged.
+    example a lane marking) and is skipped.
     """
     flagged = []
     for label_id, points, closed, filled in polylines:
         if not (closed or filled):
             continue
 
-        shapes = points or []
-        if not shapes or any(polygon_problem(s) for s in shapes):
+        if polygon_label_problem(points):
             flagged.append(label_id)
 
     return flagged

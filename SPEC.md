@@ -35,7 +35,7 @@ declared rule?", not "does a model think this label is wrong?" (that is the Brai
 | aspect_ratio | `issue:aspect_ratio` | warning | Detection | `w_px / h_px` outside `[1/max_ratio, max_ratio]` | on, max 20 |
 | duplicate | `issue:duplicate` | warning | Detection | same-sample, same-class IoU above threshold with another label; tag the lower-confidence or later one, not both | on, IoU 0.95 |
 | unknown_class | `issue:unknown_class` | error | Detection | class label not in the user-supplied allowed list (exact, case-sensitive) | off until a list is given (milestone 4b) |
-| bad_polygon | `issue:bad_polygon` | error | Polyline | fewer than 3 points, zero area, or self-intersecting (shapely) | on (milestone 4) |
+| bad_polygon | `issue:bad_polygon` | error | Polyline | no shapes, or a shape with fewer than 3 points, zero area, NaN/inf, or crossing/overlapping edges (shapely). A ring touching itself at one point (pinch) is fine; degenerate slivers are ignored when the label has another valid shape | on (milestone 4) |
 
 Notes:
 - Pixel-based checks (tiny, aspect_ratio) need image dimensions. If metadata is missing, offer to

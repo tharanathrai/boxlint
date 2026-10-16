@@ -12,6 +12,7 @@ from checks import (
     find_tiny,
     find_unknown_class,
     parse_class_list,
+    polygon_label_problem,
     polygon_problem,
 )
 
@@ -374,6 +375,8 @@ def test_dup_threshold_one_flags_nothing():
 SQUARE = [(0.1, 0.1), (0.5, 0.1), (0.5, 0.5), (0.1, 0.5)]
 BOWTIE = [(0.0, 0.0), (1.0, 1.0), (1.0, 0.0), (0.0, 1.0)]
 COLLINEAR = [(0.0, 0.0), (0.5, 0.5), (1.0, 1.0)]
+PINCH = [(0, 0), (2, 0), (1, 1), (2, 2), (0, 2), (1, 1)]
+SLIVER = [(0.2, 0.2), (0.3, 0.3), (0.2, 0.2)]  # 3-point out-and-back
 
 
 @pytest.mark.parametrize(
@@ -385,6 +388,9 @@ COLLINEAR = [(0.0, 0.0), (0.5, 0.5), (1.0, 1.0)]
         ([(0, 0), (0.5, 0), (0.5, 0.5), (0.25, 0.1), (0, 0.5)], None),  # concave is fine
         (BOWTIE, "self_intersecting"),
         ([(0, 0), (1, 1), (1, 0.2), (0, 0.6)], "self_intersecting"),  # asymmetric bow-tie
+        (PINCH, None),  # ring touches itself at one vertex: shape is fine
+        ([(0, 0), (2, 0), (2, 2), (1, 2), (1, 0), (0, 2)], None),  # vertex touches an edge
+        ([(0, 0), (2, 0), (2, 2), (1, 2), (1, 3), (1, 2), (0, 2)], "self_intersecting"),  # spike
         (COLLINEAR, "zero_area"),
         ([(0, 0), (0.5, 0), (1, 0), (0.25, 0)], "zero_area"),  # 4 collinear points
         ([], "too_few_points"),
@@ -497,3 +503,41 @@ def test_unknown_class_accepts_any_iterable():
 )
 def test_parse_class_list(text, expected):
     assert parse_class_list(text) == expected
+
+
+def test_bad_polygons_pinch_not_flagged():
+    assert find_bad_polygons(_polys(([PINCH], True, True))) == []
+
+
+@pytest.mark.parametrize("sliver", [SLIVER, COLLINEAR, [(0.1, 0.1)]])
+def test_bad_polygons_sliver_in_multi_shape_ignored(sliver):
+    assert find_bad_polygons(_polys(([SQUARE, sliver], True, True))) == []
+    assert find_bad_polygons(_polys(([sliver, SQUARE, sliver], True, True))) == []
+
+
+def test_bad_polygons_all_slivers_flagged():
+    assert find_bad_polygons(_polys(([SLIVER, COLLINEAR], True, True))) == ["0"]
+    assert find_bad_polygons(_polys(([SLIVER], True, True))) == ["0"]
+
+
+def test_bad_polygons_crossing_or_nan_in_multi_shape_still_flagged():
+    nan_tri = [(0.1, 0.1), (NAN, 0.2), (0.3, 0.1)]
+    assert find_bad_polygons(_polys(([SQUARE, SLIVER, BOWTIE], True, True))) == ["0"]
+    assert find_bad_polygons(_polys(([SQUARE, nan_tri], True, True))) == ["0"]
+
+
+@pytest.mark.parametrize(
+    "shapes, reason",
+    [
+        ([], "no_shapes"),
+        (None, "no_shapes"),
+        ([SQUARE], None),
+        ([SQUARE, SLIVER], None),
+        ([SLIVER, SQUARE, BOWTIE], "self_intersecting"),  # sliver skipped, crossing reported
+        ([SLIVER, COLLINEAR], "too_few_points"),
+        ([COLLINEAR], "zero_area"),
+        ([PINCH, SLIVER], None),
+    ],
+)
+def test_polygon_label_problem(shapes, reason):
+    assert polygon_label_problem(shapes) == reason

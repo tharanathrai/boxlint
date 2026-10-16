@@ -444,9 +444,7 @@ def _run_polyline_checks(labels, enabled, skipped):
             points = {p["id"]: p["points"] for p in labels}
             reasons = Counter()
             for label_id in flagged:
-                shapes = points[label_id] or []
-                problems = [_checks.polygon_problem(s) for s in shapes]
-                reasons[next((r for r in problems if r), "no_shapes")] += 1
+                reasons[_checks.polygon_label_problem(points[label_id])] += 1
             extra["bad_polygon"] = {"reason_counts": dict(reasons.most_common())}
 
     return results, extra
