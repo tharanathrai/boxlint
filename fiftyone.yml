@@ -1,0 +1,10 @@
+name: "@tharanathrai/boxlint"
+description: Model-free audit of detection and polygon geometry; tags suspicious labels with issue:* tags
+version: "0.1.0"
+fiftyone:
+  version: ">=1.22"
+url: https://github.com/tharanathrai/boxlint
+license: Apache-2.0
+operators:
+  - check_labels
+  - clear_issue_tags
