@@ -169,4 +169,4 @@ on a collection and builds the report. `__init__.py` holds the two operators.
 
 ## License
 
-Apache 2.0
+Apache 2.0. See [LICENSE](LICENSE).
