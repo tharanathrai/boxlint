@@ -3,12 +3,81 @@
 A [FiftyOne](https://docs.voxel51.com) plugin that lints your object detection and polygon labels:
 it finds labels that break structural rules (degenerate or out-of-bounds boxes, broken polygons,
 duplicates, unknown classes, and more), tags them `issue:<check>`, and shows a summary. No model
-needed, and nothing is ever deleted or modified.
+needed. It never deletes labels or changes their geometry; it only adds tags.
 
-Bad labels fail silently: training does not crash, it just learns worse. This plugin catches
-structural problems early, in the App or from Python, before they cost you a training run.
+Bad labels rarely fail where they were made. Depending on your training framework, they crash
+training (torchvision), turn the loss into NaN (MMDetection), or are silently dropped along with
+their whole image (Ultralytics YOLO). This plugin catches structural problems early, in the App or
+from Python, before they cost you a training run.
 
 <!-- TODO: add GIF: run "Check labels" on lsc-m5, show the summary table, then filter by an issue:* tag -->
+
+## In plain terms
+
+### Why this exists
+
+To teach a computer to find objects in images (cars, people, products on a shelf, defects on a
+production line), teams show it thousands of examples where a person drew a box or an outline
+around each object. Those drawings are the *labels*, and a model can only be as good as its
+labels.
+
+Labels get damaged on their way to training. Different people and outside vendors draw them,
+tools convert them between file formats, images get resized and cropped, and datasets get merged.
+Along the way a box can end up with no size, half outside the picture, drawn twice, or an outline
+can cross over itself. Nobody notices, because to a person a label is just a row of numbers in a
+file.
+
+### What it solves
+
+Broken labels cause trouble far from where they started:
+
+- Training **crashes**, sometimes hours into an expensive run.
+- Training software **quietly throws the image away**, so you train on less data than you paid
+  for and never find out.
+- The model **learns from wrong examples**, and its accuracy numbers become misleading.
+
+Tracking down the cause usually means someone digging through files by hand. FiftyOne, a tool
+many teams use to browse and curate image data, stores these broken labels without complaint and
+has no built-in check for them.
+
+### How it solves it
+
+Think of boxlint as a spell-checker for labels. It reads every label and checks it against simple
+rules any person would agree with:
+
+- A box must have a real size and sit inside the picture.
+- The same object should not be drawn twice.
+- An outline must be a proper shape that does not cross itself.
+- The object's name must be on your list of allowed names.
+
+Every label that breaks a rule gets a tag naming the problem, and a summary shows how many of
+each kind were found. **Errors** are definitely broken; **warnings** are unusual and worth a
+look (a tiny box may be a person far in the distance). boxlint never changes or deletes
+anything: a person decides what to fix.
+
+It needs no AI model, so it works on day one, before anything has been trained. It gives the same
+answer every time on the same data, so it can run as an automatic check. And it is fast: a few
+thousand images take about a second.
+
+### Where it helps
+
+- **Accepting labels from a vendor.** Check a delivery before you sign it off, and send back an
+  exact list of broken labels instead of a vague complaint.
+- **Converting or merging datasets.** Catch boxes broken by a format conversion (for example
+  pixel coordinates stored where fractions were expected) before they spread.
+- **Before an expensive training run.** Spend a minute checking instead of losing hours of GPU
+  time to a crash, or to images silently dropped.
+- **Automated data pipelines.** From Python, boxlint can stop a dataset from reaching training
+  when it has errors, the way a failing test stops broken code from shipping.
+- **Cleaning up an existing dataset.** Start with the labels that are definitely broken, instead
+  of reviewing everything by eye.
+- **Alongside model-based review.** Once you have a model, the FiftyOne Brain can point out
+  labels whose *meaning* is probably wrong (a cat labeled "dog"). boxlint finds labels whose
+  *form* is broken. They catch different problems.
+
+What it does not do: it will not tell you that a cat is labeled "dog", or that a box is a little
+too loose. And well-curated public datasets usually come out nearly clean; the value is mostly in
+your own, converted, merged, and vendor-labeled data.
 
 ## What it checks
 
@@ -120,14 +189,18 @@ written. Each entry in `report["checks"]` has `severity`, `tag`, `num_labels`, `
 ## Complements the Brain and the duplicate recipe
 
 The FiftyOne Brain's
-[mistakenness](https://docs.voxel51.com/api/fiftyone.brain.html) uses a model to find labels that
-are probably the wrong *class*. This plugin finds labels that break *rules*, with no model. Use
-both.
+[mistakenness](https://docs.voxel51.com/api/fiftyone.brain.html) uses a model's predictions to
+score how likely each label is wrong: wrong class, poorly localized, missing, or spurious. It
+needs a trained model and gives probabilities. This plugin needs no model and reports rule
+violations, with the same answer on every run. Use both: boxlint first, to clear out broken
+labels, then mistakenness.
 
 FiftyOne's [duplicate objects recipe](https://docs.voxel51.com/recipes/remove_duplicate_annos.html)
-uses `compute_max_ious` and `find_duplicates`, which marks the later label of each overlapping
-pair. This plugin uses the same IoU (tested against `compute_bbox_iou`), but tags the
-lower-confidence label, always keeps one label per group, and skips degenerate boxes.
+uses `compute_max_ious` and `find_duplicates`. By default `find_duplicates` compares boxes across
+classes with an IoU threshold of 0.999, and with `method="simple"` it marks the later label of
+each overlapping pair. This plugin uses the same IoU (tested against `compute_bbox_iou`), but
+compares same-class boxes only at IoU 0.95, tags the lower-confidence label, always keeps one
+label per group, and skips degenerate boxes.
 
 ## What to expect on clean data
 
@@ -142,6 +215,9 @@ The tiny ground-truth boxes are distant people, birds, a kite, and a boat, 2 to 
 the two aspect-ratio flags, one is a COCO crowd box (`iscrowd: 1`) drawn as a thin strip over a
 row of surfers, a real problem; the other is a train seen side-on.
 
+Curated benchmarks like COCO are expected to come out nearly clean of hard errors. Degenerate and
+out-of-bounds boxes show up mostly in custom, converted, merged, and vendor-labeled data.
+
 Speed: 3,000 samples with 18,585 boxes check and tag in about half a second.
 
 ## Limitations
@@ -151,7 +227,8 @@ Speed: 3,000 samples with 18,585 boxes check and tag in about half a second.
   nested fields.
 - Unknown class applies to Detections only. Class names in the comma-separated input cannot
   contain commas (use the Python API with a list instead).
-- Duplicates are compared within a single sample only.
+- Duplicates are compared within a single sample only, and only within the same class: one
+  object labeled as both `chair` and `couch` is not flagged.
 - It finds structural problems, not semantic ones.
 
 ## Development

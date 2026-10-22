@@ -3,8 +3,9 @@
 ## Problem
 
 Detection and polygon datasets pass through annotation tools, vendors, converters, resizers, and
-merges. Each step can corrupt geometry. Bad labels fail silently: training does not crash, it just
-learns worse, and evaluation gets distorted. This plugin provides a fast, deterministic audit that
+merges. Each step can corrupt geometry. Bad labels fail far from where they were made: depending
+on the framework they crash training, turn the loss into NaN, or are silently dropped, and
+evaluation gets distorted. This plugin provides a fast, deterministic audit that
 runs inside the FiftyOne App and from Python.
 
 Positioning: a model-free **label linter**. It answers "does this label break a structural or
