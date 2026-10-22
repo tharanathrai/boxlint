@@ -10,7 +10,7 @@ training (torchvision), turn the loss into NaN (MMDetection), or are silently dr
 their whole image (Ultralytics YOLO). This plugin catches structural problems early, in the App or
 from Python, before they cost you a training run.
 
-<!-- TODO: add GIF: run "Check labels" on lsc-m5, show the summary table, then filter by an issue:* tag -->
+![Running Check labels in the FiftyOne App, reading the summary, and filtering by issue tags](docs/boxlint.gif)
 
 ## In plain terms
 
